@@ -1,0 +1,338 @@
+---
+title: "Barack Obama"
+author: "Pradeep Adhokshaja"
+date: "26 October 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Libraries
+
+The tools to load are as follows.
+
+
+```{r }
+library(dplyr)
+library(plotly)
+library(stringr)
+library(knitr)
+library(tidyr)
+library(broom)
+library(RSentiment)
+library(tidytext)
+library(tm)
+library(igraph)
+library(data.table)
+library(widyr)
+#library(ggraph)
+
+```
+
+Let's explore the Tweets produced by President Obama.
+
+## Importing the Data
+
+
+```{r pressure, echo=FALSE}
+obama <- read.csv("BarackObama.csv",header=T,stringsAsFactors = F)
+obama$year <- as.numeric(str_sub(obama$date,-4,-1))
+obama$month <- as.factor(str_sub(obama$date,-8,-6))
+
+```
+
+
+Taking care of the NA values that have been introduced.
+
+```{r}
+for(i in 1:dim(obama)[1])
+{
+  if(is.na(obama$year[i]))
+  {
+    obama$year[i]<-2016
+  }
+}
+
+obama$month[1:4] <- 'Oct'
+for(i in 5:427)
+{
+  obama$month[i]<- str_sub(obama$date[i],1,3)
+}
+#df$Month.Name <- factor( df$Month.Name, levels = c( "Apr", "May", ..., "Feb", "Mar" ) )
+obama$month <- factor(obama$month,levels=c('Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'))
+```
+
+
+## Total Tweets by Year and Month
+
+```{r}
+obama %>% group_by(year,month) %>% summarise(n=n()) %>%
+  ggplot(aes(x = month, y =n) ) +
+     geom_line(aes(group = year, colour = factor(year)),size=1) +    
+     scale_x_discrete(name = "Month" ) +
+     scale_y_continuous()
+
+ggplotly()
+```
+
+The year 2012 seems to be the year President Obama has engaged with Twitter a lot.This could be due to the Presidential elections in 2012. He was standing against Mitt Romney.
+
+## Number of Hashtags.
+
+```{r}
+obama$hashtags <-(str_extract_all(obama$text, "#\\S+"))
+obama$num_hashtag <- rep(0,dim(obama)[1])
+for(i in 1:dim(obama)[1])
+{
+  obama$num_hashtag[i] <- length(unlist(obama$hashtags[i]))
+  
+}
+
+
+```
+
+```{r}
+obama %>% group_by(year,month) %>% summarise(n=sum(num_hashtag)) %>%
+  ggplot(aes(x=month,y=n))+
+  geom_line(aes(group=year,colour=factor(year)),size=1)+
+  scale_x_discrete(name="Month")+
+  scale_y_continuous()
+  
+ggplotly()
+```
+
+The number of hashtags used seems to be haphazard. There is a spike in the number of hashtags used in 2012 in the month of October, before the Presidential Election on 6th November 2012. What were the most popular hashtags
+
+```{r}
+df <- data.frame(hashtag = unlist(obama$hashtags))
+kable(df %>% group_by(hashtag) %>% summarise(n=n()) %>% arrange(desc(n)) %>% filter(n>10))
+
+```
+
+
+
+## Sentiment scores
+
+```{r}
+tweet <- obama$text
+tweet = gsub("(f|ht)(tp)(s?)(://)(.*)[.|/](.*)", " ", tweet)
+#retweet
+tweet = gsub("(RT|via)((?:\\b\\W*@\\w+)+)", " ", tweet)
+# removing hashtags
+tweet = gsub("#\\w+", " ", tweet)
+# removing @people
+tweet = gsub("@\\w+", " ", tweet)
+#removing punctuations
+tweet = gsub("[[:punct:]]", " ", tweet)
+#removing numbers
+tweet = gsub("[[:digit:]]", " ", tweet)
+#removing emojis
+tweet<-str_replace_all(tweet,"[^[:graph:]]"," ")
+tweet <- str_replace_all(tweet,'https'," ")
+tweet <- str_replace_all(tweet,'amp'," ")
+wordstoremove <- c("american","america","obama","president","romney","americans","years","year","nation")
+tweet <- sapply(tweet, function(x) gsub(paste(wordstoremove, collapse = '|'), '', x))
+# removing non-english characters
+#tweet1 <- grep('tweet',iconv(tweet,'latin1','ASCII',sub='tweet'))
+obama$text_clean <- tweet
+
+
+
+obama$sentiment <- rep("",dim(obama)[1])
+
+for(i in 1:dim(obama)[1])
+{
+  obama$sentiment[i] <- as.character(calculate_sentiment(obama$text_clean[i])$sentiment)
+}
+```
+
+### Sentiments by Year
+
+```{r}
+
+obama %>% group_by(year,sentiment) %>% summarise(n=n()) %>%
+  ggplot(aes(x=year,y=n,fill=sentiment))+
+  geom_bar(stat='identity',width=0.5,position = 'dodge')+
+  ggtitle("Year and Sentiments")
+```
+
+### Sentiments by Month
+
+```{r}
+obama %>% group_by(month,sentiment) %>% summarise(n=n()) %>%
+  ggplot(aes(x=month,y=n,fill=sentiment))+
+  geom_bar(stat='identity',width=0.5,position = 'dodge')+
+  ggtitle("Month and Sentiments")
+
+```
+
+We see that a large portion of the tweets were negative in nature.The number of tweets spiked up in the year 2012. The highest number Tweets with very positive  sentiments are also in 2012. The month October had the highest number of Tweets overall. This could be attributed to the last month before the Presidential Elections
+
+## Frequent Terms Used in each year
+
+```{r}
+text_2016 <- subset(obama,year==2016)$text_clean
+text_2015 <- subset(obama,year==2015)$text_clean
+text_2014 <- subset(obama,year==2014)$text_clean
+text_2013 <- subset(obama,year==2013)$text_clean
+text_2012 <- subset(obama,year==2012)$text_clean
+text_2011 <- subset(obama,year==2011)$text_clean
+text_2010 <- subset(obama,year==2010)$text_clean
+text_2009 <- subset(obama,year==2009)$text_clean
+text_2008 <- subset(obama,year==2008)$text_clean
+text_2007 <- subset(obama,year==2007)$text_clean
+
+frequent_words_plot <- function(tweet,count)
+{
+  corp <- Corpus(VectorSource(tweet))
+  corp <- tm_map(corp,removeWords,c(stopwords('english'),stopwords('SMART')))
+  tdm <- TermDocumentMatrix(corp) 
+  
+  freq.terms <- findFreqTerms(tdm,lowfreq = count)
+  term.freq <- rowSums(as.matrix(tdm))
+  term.freq <- subset(term.freq, term.freq >= count)
+  df <- data.frame(term = names(term.freq), freq = term.freq)
+  #ggplot(df, aes(x = term, y = freq)) + geom_bar(stat = "identity") + xlab("Terms") #+ ylab("Count") + coord_flip()
+  ggplot(df, aes(x=freq, y=reorder(term, freq))) +
+  geom_point(size=3) + # Use a larger dot
+  theme_bw() + ylab("Words")+
+  theme(panel.grid.major.x = element_blank(),
+  panel.grid.minor.x = element_blank(),
+  panel.grid.major.y = element_line(colour="grey60", linetype="dashed"))
+}
+```
+
+### 2007
+
+```{r}
+frequent_words_plot(text_2007,3)
+```
+
+### 2008
+
+```{r}
+frequent_words_plot(text_2008,12)
+```
+
+### 2009
+
+```{r}
+frequent_words_plot(text_2009,4)
+```
+
+### 2010
+
+```{r}
+frequent_words_plot(text_2010,10)
+```
+
+### 2011
+
+```{r}
+frequent_words_plot(text_2011,15)
+
+```
+
+### 2012
+
+```{r}
+frequent_words_plot(text_2012,40)
+```
+
+### 2013
+
+```{r}
+frequent_words_plot(text_2013,25)
+```
+
+### 2014
+
+```{r}
+frequent_words_plot(text_2014,25)
+```
+
+### 2015
+
+```{r}
+frequent_words_plot(text_2015,30)
+```
+
+### 2016
+
+```{r}
+frequent_words_plot(text_2016,12)
+```
+
+## Terms and Their Correlations
+
+```{r,fig.height=20}
+temp <- obama[,c('X','date','month','id','text_clean','year')]
+
+words <- temp %>%
+  unnest_tokens(word,text_clean)%>%
+  filter(!word %in% stop_words$word,
+         str_detect(word,"^[a-z']+$"))
+
+words_counts <- words %>%
+  count(word) %>%
+  filter(n >= 4)
+
+words_correlations <- words %>%
+  semi_join(words_counts) %>%
+  pairwise_cor(word, X, sort = TRUE, upper = FALSE)
+
+set.seed(2016)
+words_correlations <- filter(words_correlations,correlation>0.5)
+words_correlations <- as.data.frame(words_correlations)
+graph <- make_graph(t(words_correlations[,c(1:2)]),directed = F)
+E(graph)$weight <- words_correlations$correlation
+
+plot(graph,edge.width=E(graph)$weight,layout=layout.fruchterman.reingold,vertex.size = 5)
+
+kable(words_correlations)
+
+
+
+```
+
+
+## Words for each emotion category
+Let's look at the words used by President Obama's Tweets to convey the emotions that we have seen.
+
+```{r}
+text_neg <- subset(obama,sentiment=='Negative')$text_clean
+text_neu <- subset(obama,sentiment=='Neutral')$text_clean
+text_pos <- subset(obama,sentiment=='Positive')$text_clean
+text_vneg <- subset(obama,sentiment=='Very Negative')$text_clean
+text_vpos <- subset(obama,sentiment=='Very Positive')$text_clean
+
+```
+
+### Negative
+
+```{r}
+frequent_words_plot(text_neg,45)
+```
+
+### Neutral
+
+```{r}
+frequent_words_plot(text_neu,45)
+```
+
+### Postive
+
+```{r}
+frequent_words_plot(text_pos,45)
+```
+
+### Very Negative
+
+```{r}
+frequent_words_plot(text_vneg,45)
+```
+
+
+The above plots tell us about the words that have been used to convey each category of emotion.
